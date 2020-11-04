@@ -308,7 +308,7 @@ def strategy_cy50_kmeans():
     plt.show()
     return df_pnl
 
-strategy_cy50_kmeans()
+df_pnl =  strategy_cy50_kmeans() # 获得策略的无费净值曲线
 
 
 
