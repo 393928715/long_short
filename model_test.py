@@ -2,8 +2,8 @@ import pandas as pd
 from sklearn.model_selection import GroupTimeSeriesSplit
 from zgtools.data_tool import *
 from xgboost import XGBClassifier, XGBRegressor
+from lightgbm  import LGBMRegressor, LGBMClassifier, plot_importance
 from sklearn.metrics import confusion_matrix
-
 
 def get_qcut_ret(df_test, cut_num=10):
     seri_date = df_test.index.get_level_values('date').drop_duplicates()
@@ -72,6 +72,7 @@ def get_ret_no_cost(df_test, upper_quantile, lower_quantile):
     return df_ret
 
 def get_real_ret(df_test, upper_quantile, lower_quantile):
+    seri_date = df_test.index.get_level_values('date').drop_duplicates()
     # 构造买卖方向矩阵
     df_order_flag = df_test.copy()
     df_order_flag['order_flag'] = None
@@ -128,26 +129,30 @@ def get_real_ret(df_test, upper_quantile, lower_quantile):
     return df_pnl
 
 # 读取数据
-df_factor = pd.read_csv('df_factor_introday_1420-1430-mean.csv', index_col=['date', 'code'])
+df_factor = pd.read_csv('df_factor_introday_1425-1435.csv', index_col=['date', 'code'])
+#df_factor_test = pd.read_csv('df_factor_introday_0955-1000-mean.csv', index_col=['date', 'code'])
+
 seri_date = df_factor.index.get_level_values('date').drop_duplicates()
 train_date = '2020-04-30'
 
-label_col = 'ret_30'
+label_col = 'ret_60'
 
 df_train = df_factor[df_factor.index.get_level_values('date') < train_date]
 df_train['bin'] = None
 df_train.loc[df_train[label_col] <= df_train[label_col].quantile(0.3), 'bin'] = 0
 df_train.loc[df_train[label_col] >= df_train[label_col].quantile(0.7), 'bin'] = 1
 df_train.dropna(inplace=True)
-df_test = df_factor[(df_factor.index.get_level_values('date') >= train_date)]
-                    #& (df_factor['time'] == '10:00:00')]
+# df_test = df_factor_test[(df_factor_test.index.get_level_values('date') >= train_date)]
+df_test = df_factor[(df_factor.index.get_level_values('date') >= train_date)
+                    & (df_factor['time'] == '14:30:00')]
 
 no_x_cols = ['next_open2open', 'bin', 'ret_60', 'ret_30', 'ret_15', 'ts', 'date', 'time']
 factor_cols = df_train.columns.difference(no_x_cols)
 y_col = 'bin'
-df_train, scaler = data_scale(df_train, factor_cols=factor_cols)
-#df_val, _ = data_scale(df_val, factor_cols=factor_cols, scaler=scaler)
-df_test,_ = data_scale(df_test, factor_cols=factor_cols, scaler=scaler)
+
+# df_train, scaler = data_scale(df_train, factor_cols=factor_cols)
+# #df_val, _ = data_scale(df_val, factor_cols=factor_cols, scaler=scaler)
+# df_test,_ = data_scale(df_test, factor_cols=factor_cols, scaler=scaler)
 
 x_train, y_train = get_x_y(df=df_train, no_x_cols=no_x_cols, label_col=y_col)
 #x_val, y_val = get_x_y(df=df_val, no_x_cols=no_x_cols, label_col=label_col)
@@ -155,8 +160,9 @@ x_test, y_test = get_x_y(df=df_test, no_x_cols=no_x_cols, label_col=label_col)
 
 # 用XGBoost建模
 model = XGBClassifier(seed=1, tree_method='gpu_hist')
+#model = LGBMClassifier(seed=1)
 
-model.fit(x_train, y_train)
+model.fit(x_train, y_train.astype(int))
 pred = model.predict(x_test)
 pred_proba = model.predict_proba(x_test)[:,1] # 只取预测为1的概率
 df_test['up_proba'] = pred_proba
@@ -224,6 +230,15 @@ df_pnl = get_real_ret(df_test, upper_quantile=0.9, lower_quantile=0.1)  # 获取
 # dict = factor_selection(df_corr=x_train.corr(), df_score=df_score)
 # use_cols = dict['rest_cols']
 #
+# model.fit(x_train[use_cols], y_train.astype(int))
+# #pred = model.predict(x_test[use_cols])
+# pred_proba = model.predict_proba(x_test[use_cols])[:,1] # 只取预测为1的概率
+# df_test['up_proba'] = pred_proba
+#
+# df_ret = get_qcut_ret(df_test) # 获取分位数收益
+# df_ret = get_ret_no_cost(df_test, upper_quantile=0.9, lower_quantile=0.1) # 获取无成本收益
+# df_pnl = get_real_ret(df_test, upper_quantile=0.9, lower_quantile=0.1)  # 获取真实收益
+
 # model.fit(x_train[use_cols], y_train)
 # pred = model.predict(x_test[use_cols])
 # cm = confusion_matrix(y_test.values, list(pred))
